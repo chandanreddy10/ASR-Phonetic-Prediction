@@ -1,0 +1,2 @@
+https://media.talkbank.org/childes/0extra/DrivenData/audio.zip?f=open
+https://media.talkbank.org/childes/0extra/DrivenData/train_phon_transcripts.jsonl?f=open
