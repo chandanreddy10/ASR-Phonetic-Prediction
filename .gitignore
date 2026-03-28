@@ -1,3 +1,6 @@
 data_files
 data_download.txt
 cookies.txt
+runtime_repo
+processed
+models

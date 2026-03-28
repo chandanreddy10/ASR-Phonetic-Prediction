@@ -24,9 +24,9 @@ from nemo_adapter import (
     update_model_config_to_support_adapter,
 )
 
-from score import english_spelling_normalizer, score_wer
+from score import VALID_IPA_CHARS, score_ipa_cer
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.append(str(PROJECT_ROOT))
 
 DATA_FILE = PROJECT_ROOT / "data_files" / "train_samples.csv"
@@ -77,12 +77,12 @@ def prepare_data(sample=None):
     )
     df = df.loc[df["audio_duration_sec"] <= 30].reset_index(drop=True)
     df = df[
-        ["audio_path", "audio_duration_sec", "orthographic_text"]
+        ["audio_path", "audio_duration_sec", "phonetic_text"]
     ].rename(
         columns={
             "audio_path": "audio_filepath",
             "audio_duration_sec": "duration",
-            "orthographic_text": "text",
+            "phonetic_text": "text",
         }
     )
 
@@ -122,7 +122,7 @@ def build_config(train_manifest, val_manifest, sample=None):
             "model": {
                 "pretrained_model": "nvidia/parakeet-tdt-0.6b-v2",
                 "adapter": {
-                    "adapter_name": "asr_children_orthographic",
+                    "adapter_name": "asr_children_phonetic",
                     "adapter_module_name": "encoder",
                     "linear": {"in_features": 1024},
                 },
@@ -156,7 +156,7 @@ def build_config(train_manifest, val_manifest, sample=None):
                 "accumulate_grad_batches":4,
             },
             "exp_manager": {
-                "exp_dir": str(PROJECT_ROOT / "models" / "orthographic_finetune_nemo"),
+                "exp_dir": str(PROJECT_ROOT / "models" / "phonetic_finetune_nemo"),
             },
         }
     )
@@ -193,7 +193,11 @@ def setup_model(cfg):
 
     with open_dict(model.cfg):
         model.cfg.decoding.greedy.use_cuda_graph_decoder = False
-
+    phoneme_list = list(VALID_IPA_CHARS)
+    model.change_vocabulary(
+        new_tokenizer_dir="tokenized/tokenizer_spe_char_v52",
+        new_tokenizer_type="bpe"
+    )
     model.change_decoding_strategy(model.cfg.decoding)
 
     logger.info("Model loaded successfully")
@@ -309,19 +313,19 @@ def evaluate_model(exp_log_dir, cfg):
 
     predictions = [h.text if hasattr(h, "text") else h for h in raw]
 
-    normalizer = EnglishTextNormalizer(english_spelling_normalizer)
+    # normalizer = EnglishTextNormalizer(english_spelling_normalizer)
 
-    filtered = [
-        (r, p)
-        for r, p in zip(references, predictions)
-        if normalizer(r) != ""
-    ]
+    # filtered = [
+    #     (r, p)
+    #     for r, p in zip(references, predictions)
+    #     if normalizer(r) != ""
+    # ]
 
-    references, predictions = zip(*filtered)
+    # references, predictions = zip(*filtered)
 
-    wer = score_wer(references, predictions)
+    wer = score_ipa_cer(references, predictions)
 
-    logger.info(f"Validation WER: {wer:.4f}")
+    logger.info(f"Validation CER: {wer:.4f}")
 
     logger.info("Sample predictions:")
 
