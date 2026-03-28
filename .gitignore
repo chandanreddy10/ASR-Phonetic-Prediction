@@ -4,4 +4,4 @@ cookies.txt
 runtime_repo
 processed
 models
-*.log
+finetune/*.log
