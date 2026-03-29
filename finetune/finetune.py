@@ -24,7 +24,7 @@ from nemo_adapter import (
 )
 
 from score import VALID_IPA_CHARS, score_ipa_cer
-
+from nemo.collections.asr.models.ctc_bpe_models import EncDecCTCModelBPE
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.append(str(PROJECT_ROOT))
 
@@ -40,7 +40,50 @@ LOG_FILE ="finetune.log"
 
 torch.set_float32_matmul_precision("high")
 
+class ASRModelWithCER(EncDecCTCModelBPE):
+    def validation_step(self, batch, batch_idx):
+        """
+        Validation step returns predictions and targets for CER computation
+        """
+        audio_signal, audio_signal_len, labels, labels_len = batch  # adjust if needed
 
+        # Forward pass
+        logits, logit_len, _ = self.forward(
+            input_signal=audio_signal,
+            input_signal_length=audio_signal_len
+        )
+
+        # Decode predictions to phonemes/text
+        preds = self.decoding.decode(logits, logit_len)
+        targets = labels  # your target phonemes
+
+        # Return dictionary for on_validation_epoch_end
+        return {"preds": preds, "targets": targets}
+
+    def on_validation_epoch_end(self):
+        """
+        Aggregate predictions from all batches and compute CER
+        """
+        refs = []
+        hyps = []
+
+        # self.validation_step_outputs is automatically populated by Lightning
+        for batch_out in self.validation_step_outputs:
+            if batch_out is None:
+                continue
+            if isinstance(batch_out, dict):
+                refs.extend(batch_out.get('targets', []))
+                hyps.extend(batch_out.get('preds', []))
+            else:
+                # fallback in case batch_out is tuple/list
+                batch_refs, batch_preds = batch_out
+                refs.extend(batch_refs)
+                hyps.extend(batch_preds)
+
+        if refs and hyps:
+            cer = score_ipa_cer(refs, hyps)
+            # log val_cer for ModelCheckpoint and progress bar
+            self.log('val_cer', cer, prog_bar=True, sync_dist=True)
 def setup_logging(log_file=LOG_FILE):
 
     logger = logging.getLogger()
@@ -177,14 +220,14 @@ def setup_model(cfg):
 
     logger.info("Loading pretrained model...")
 
-    model_cfg = ASRModel.from_pretrained(
+    model_cfg = ASRModelWithCER.from_pretrained(
         cfg.model.pretrained_model,
         return_config=True,
     )
 
     update_model_config_to_support_adapter(model_cfg, cfg)
 
-    model = ASRModel.from_pretrained(
+    model = ASRModelWithCER.from_pretrained(
         cfg.model.pretrained_model,
         override_config_path=model_cfg,
         trainer=trainer,
