@@ -143,7 +143,7 @@ model:
     # sample_rate will be merged with model config
     # use_start_end_token will be merged with model config
     manifest_filepath: ???
-    batch_size: 16
+    batch_size: 32
     shuffle: false
     num_workers: 8
     pin_memory: true

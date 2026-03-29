@@ -15,7 +15,6 @@ from nemo.utils.trainer_utils import resolve_trainer_cfg
 
 from omegaconf import OmegaConf, open_dict
 from sklearn.model_selection import train_test_split
-from transformers.models.whisper.english_normalizer import EnglishTextNormalizer
 
 from nemo_adapter import (
     add_global_adapter_cfg,
@@ -120,7 +119,7 @@ def build_config(train_manifest, val_manifest, sample=None):
     overrides = OmegaConf.create(
         {
             "model": {
-                "pretrained_model": "nvidia/parakeet-tdt-0.6b-v2",
+                "pretrained_model": "nvidia/parakeet-ctc-0.6b",
                 "adapter": {
                     "adapter_name": "asr_children_phonetic",
                     "adapter_module_name": "encoder",
@@ -141,7 +140,7 @@ def build_config(train_manifest, val_manifest, sample=None):
                     "channel_selector": "average",
                 },
                 "optim": {
-                    "lr": 0.001,
+                    "lr": 3e-5,
                     "weight_decay": 0.0,
                 },
             },
@@ -151,7 +150,7 @@ def build_config(train_manifest, val_manifest, sample=None):
                 "strategy": "auto",
                 "max_epochs": 1, #if sample else None,
                 "max_steps": -1, #if sample else 10000,
-                "val_check_interval": 0.2, # if sample else 500,
+                "val_check_interval": 0.01, # if sample else 500,
                 "enable_progress_bar": True,
                 "accumulate_grad_batches":4,
             },
@@ -193,10 +192,10 @@ def setup_model(cfg):
 
     with open_dict(model.cfg):
         model.cfg.decoding.greedy.use_cuda_graph_decoder = False
-    phoneme_list = list(VALID_IPA_CHARS)
+    
     model.change_vocabulary(
-        new_tokenizer_dir="tokenized/tokenizer_spe_char_v52",
-        new_tokenizer_type="bpe"
+        new_tokenizer_dir="tokenizer/tokenizer_wpe_v52",
+        new_tokenizer_type="wpe"
     )
     model.change_decoding_strategy(model.cfg.decoding)
 
@@ -323,9 +322,9 @@ def evaluate_model(exp_log_dir, cfg):
 
     # references, predictions = zip(*filtered)
 
-    wer = score_ipa_cer(references, predictions)
+    cer = score_ipa_cer(references, predictions)
 
-    logger.info(f"Validation CER: {wer:.4f}")
+    logger.info(f"Validation CER: {cer:.4f}")
 
     logger.info("Sample predictions:")
 
