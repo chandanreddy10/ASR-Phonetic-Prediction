@@ -1,6 +1,7 @@
 import sys
 import json
 import random
+import logging
 from pathlib import Path
 from dataclasses import dataclass
 from typing import Dict, List, Union, Optional
@@ -17,9 +18,13 @@ from transformers import (
     TrainingArguments,
     Trainer,
 )
-from loguru import logger
+import sys
+from pathlib import Path
 
-from .finetune.score import VALID_IPA_CHARS, score_ipa_cer
+PROJECT_ROOT = Path(__file__).resolve().parents[1] 
+sys.path.insert(0, str(PROJECT_ROOT))
+
+from finetune.score import VALID_IPA_CHARS, score_ipa_cer
 
 # -------------------
 # Constants & Paths
@@ -29,20 +34,22 @@ sys.path.append(str(PROJECT_ROOT))
 
 DATA_ROOT = PROJECT_ROOT / "data_files"
 DATA_FILE = DATA_ROOT / "train_samples.csv"
-MANIFEST_DIR = PROJECT_ROOT / "processed" / "ortho_dataset"
-TRAIN_MANIFEST = MANIFEST_DIR / "train_manifest.jsonl"
-VAL_MANIFEST = MANIFEST_DIR / "val_manifest.jsonl"
 
 PROCESSED_DATASET_DIR = DATA_ROOT / "processed" / "phonetic_dataset"
 LOG_FILE = "finetune.log"
 SR = 16000  # Audio sampling rate
 WAV2VEC2_DOWNSAMPLE = 320
 
-MANIFEST_DIR.mkdir(parents=True, exist_ok=True)
-
-# Configure logger
-logger.add(LOG_FILE, rotation="10 MB", retention="10 days", level="INFO")
-
+# -------------------
+# Configure Python Logging
+# -------------------
+logging.basicConfig(
+    filename=LOG_FILE,
+    filemode="a",
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    level=logging.INFO,
+)
+logger = logging.getLogger(__name__)
 
 # -------------------
 # Data Preparation
@@ -70,7 +77,6 @@ def prepare_data() -> Dataset:
     dataset = dataset.cast_column("audio_path", Audio(sampling_rate=SR))
     logger.info("Dataset prepared with %d samples", len(dataset))
     return dataset
-
 
 # -------------------
 # Tokenizer & Processor
@@ -110,7 +116,6 @@ def create_processor() -> Wav2Vec2Processor:
     logger.info("Processor created")
     return processor
 
-
 @dataclass
 class DataCollatorCTCWithPadding:
     processor: Wav2Vec2Processor
@@ -143,7 +148,6 @@ class DataCollatorCTCWithPadding:
         batch["labels"] = labels
         return batch
 
-
 # -------------------
 # Preprocessing
 # -------------------
@@ -170,7 +174,6 @@ def preprocess_dataset(dataset: Dataset, processor: Wav2Vec2Processor) -> Datase
     logger.info("CTC filter applied: %d -> %d samples", before_filter, len(dataset))
     return dataset
 
-
 # -------------------
 # Model & Training
 # -------------------
@@ -183,10 +186,9 @@ def create_model(processor: Wav2Vec2Processor) -> Wav2Vec2ForCTC:
         ignore_mismatched_sizes=True,
         vocab_size=len(processor.tokenizer),
     )
-    model.freeze_feature_encoder()
-    logger.info("Model loaded and feature encoder frozen")
+    
+    logger.info("Model loaded.")
     return model
-
 
 def compute_metrics(pred):
     pred_ids = np.argmax(pred.predictions, axis=-1)
@@ -194,7 +196,6 @@ def compute_metrics(pred):
     pred_str = processor.batch_decode(pred_ids)
     label_str = processor.batch_decode(pred.label_ids, group_tokens=False)
     return {"cer": score_ipa_cer(label_str, pred_str)}
-
 
 def train_model(model: Wav2Vec2ForCTC, processor: Wav2Vec2Processor, train_dataset: Dataset, eval_dataset: Dataset):
     output_dir = PROJECT_ROOT / "models" / "wav2vec2-phonetic"
@@ -242,7 +243,6 @@ def train_model(model: Wav2Vec2ForCTC, processor: Wav2Vec2Processor, train_datas
     logger.info("Training finished")
     return trainer
 
-
 # -------------------
 # Main Execution
 # -------------------
@@ -252,7 +252,7 @@ if __name__ == "__main__":
     processed_dataset = preprocess_dataset(dataset, processor)
 
     # Split dataset
-    dataset_split = processed_dataset.train_test_split(test_size=0.1, shuffle=True, seed=42)
+    dataset_split = processed_dataset.train_test_split(test_size=0.05, shuffle=True, seed=42)
     train_dataset = dataset_split["train"]
     eval_dataset = dataset_split["test"]
 
